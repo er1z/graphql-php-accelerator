@@ -85,8 +85,7 @@ jobs:
           name: ext-php${{ matrix.php }}-${{ matrix.ts }}
           path: target/release/
 
-      - name: Locate run-tests.php
-        id: runtests
+      - name: Run PHPT tests
         run: |
           RT=$(find /usr -name 'run-tests.php' -print -quit 2>/dev/null)
           if [ -z "$RT" ]; then
@@ -94,11 +93,10 @@ jobs:
               || sudo apt-get install -y php-dev
             RT=$(find /usr -name 'run-tests.php' -print -quit)
           fi
-          echo "path=${RT}" >> "$GITHUB_OUTPUT"
-
-      - name: Run PHPT tests
-        run: |
-          php "${{ steps.runtests.outputs.path }}" \
+          # run-tests.php writes run-test-info.php next to itself; copy it to
+          # /tmp so that __DIR__ points somewhere the runner can write to.
+          cp "$RT" /tmp/run-tests.php
+          php /tmp/run-tests.php \
             -p "$(which php)" \
             -d "extension=$(pwd)/target/release/libgraphql_accelerator.so" \
             --show-diff \
