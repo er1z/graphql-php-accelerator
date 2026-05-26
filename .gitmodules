@@ -1,0 +1,3 @@
+[submodule "graphql-php"]
+	path = graphql-php
+	url = https://github.com/webonyx/graphql-php
