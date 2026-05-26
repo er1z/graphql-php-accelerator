@@ -1,0 +1,23 @@
+[package]
+name = "graphql_accelerator"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Native GraphQL parser accelerator for webonyx/graphql-php"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ext-php-rs = "0.15"
+apollo-parser = "0.8"
+
+[build-dependencies]
+ext-php-rs = "0.15"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
