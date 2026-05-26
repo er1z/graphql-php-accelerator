@@ -103,12 +103,9 @@ jobs:
             --offline \
             tests/phpt/
 
-  # ── PHPUnit regression check ──────────────────────────────────────────────
-  # Runs the suite twice (bare PHP, then with extension) in one job so we can
-  # compare failure counts.  Pre-existing failures in the submodule are fine as
-  # long as the extension does not introduce new ones.
+  # ── PHPUnit — baseline + regression check ────────────────────────────────
   phpunit-comparison:
-    name: "PHPUnit regression · PHP ${{ matrix.php }} ${{ matrix.ts }}"
+    name: "PHPUnit · PHP ${{ matrix.php }} ${{ matrix.ts }}"
     runs-on: ubuntu-latest
     needs: build
     continue-on-error: ${{ matrix.php == '8.5' }}
@@ -149,35 +146,27 @@ jobs:
         working-directory: graphql-php
         run: composer install --no-interaction --prefer-dist --no-progress
 
+      # Mirrors the INI flags from graphql-php's own `composer test` script.
       - name: Run PHPUnit — baseline (no extension)
         working-directory: graphql-php
-        run: php vendor/bin/phpunit -c phpunit.xml.dist 2>&1 | tee /tmp/phpunit-baseline.txt || true
+        run: >-
+          php
+          -d zend.exception_ignore_args=0
+          -d zend.assertions=1
+          -d assert.active=1
+          -d assert.exception=1
+          vendor/bin/phpunit
 
       - name: Run PHPUnit — with extension
         working-directory: graphql-php
-        run: |
-          php -d "extension=${{ github.workspace }}/target/release/libgraphql_accelerator.so" \
-              vendor/bin/phpunit -c phpunit.xml.dist 2>&1 | tee /tmp/phpunit-ext.txt || true
-
-      - name: Compare failure counts
-        run: |
-          extract() {
-            local f=$1 n=0
-            for label in Failures Errors; do
-              v=$(grep -oP "${label}: \K[0-9]+" "$f" || true)
-              n=$((n + ${v:-0}))
-            done
-            echo $n
-          }
-          BASE=$(extract /tmp/phpunit-baseline.txt)
-          EXT=$(extract /tmp/phpunit-ext.txt)
-          echo "Baseline failures+errors : $BASE"
-          echo "Extension failures+errors: $EXT"
-          if [ "$EXT" -gt "$BASE" ]; then
-            echo "FAIL: extension introduced $((EXT - BASE)) new test failure(s)."
-            exit 1
-          fi
-          echo "PASS: no new failures introduced by the extension."
+        run: >-
+          php
+          -d zend.exception_ignore_args=0
+          -d zend.assertions=1
+          -d assert.active=1
+          -d assert.exception=1
+          -d "extension=${{ github.workspace }}/target/release/libgraphql_accelerator.so"
+          vendor/bin/phpunit
 
   # ── Performance gate ──────────────────────────────────────────────────────
   performance-gate:
