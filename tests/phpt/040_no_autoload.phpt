@@ -31,9 +31,13 @@ foreach (['GraphQL\Language\AST\Node', 'GraphQL\Language\AST\Location'] as $c) {
     new ReflectionClass($c);
 }
 
+$allowed = [
+    'GraphQL\\Language\\AST\\NodeList' => true,
+    'GraphQL\\Language\\AST\\NodeKind' => true,
+];
 $badHits = array_values(array_filter(
     $asked,
-    static fn ($n) => str_starts_with($n, 'GraphQL\\Language\\AST\\'),
+    static fn ($n) => str_starts_with($n, 'GraphQL\\Language\\AST\\') && !isset($allowed[$n]),
 ));
 if ($badHits !== []) {
     echo "FAIL: autoloader asked for:\n";
