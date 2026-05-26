@@ -1,0 +1,252 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # ── Build ─────────────────────────────────────────────────────────────────
+  build:
+    name: "Build · PHP ${{ matrix.php }} ${{ matrix.ts }}"
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.php == '8.5' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4', '8.5']
+        ts:  ['nts', 'ts']   # ts = ZTS (thread-safe)
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, json
+          ini-values: error_reporting=E_ALL
+        env:
+          phpts: ${{ matrix.ts }}
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-registry-
+
+      - name: Cache build target
+        uses: actions/cache@v4
+        with:
+          path: target/
+          key: cargo-target-php${{ matrix.php }}-${{ matrix.ts }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-target-php${{ matrix.php }}-${{ matrix.ts }}-
+
+      - name: Build extension
+        run: cargo build --release
+
+      - name: Upload .so artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ext-php${{ matrix.php }}-${{ matrix.ts }}
+          path: target/release/libgraphql_accelerator.so
+          retention-days: 7
+
+  # ── PHPT tests ────────────────────────────────────────────────────────────
+  phpt-tests:
+    name: "PHPT · PHP ${{ matrix.php }} ${{ matrix.ts }}"
+    runs-on: ubuntu-latest
+    needs: build
+    continue-on-error: ${{ matrix.php == '8.5' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4', '8.5']
+        ts:  ['nts', 'ts']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, json
+        env:
+          phpts: ${{ matrix.ts }}
+
+      - name: Download extension
+        uses: actions/download-artifact@v4
+        with:
+          name: ext-php${{ matrix.php }}-${{ matrix.ts }}
+          path: target/release/
+
+      - name: Locate run-tests.php
+        id: runtests
+        run: |
+          RT=$(find /usr -name 'run-tests.php' -print -quit 2>/dev/null)
+          if [ -z "$RT" ]; then
+            sudo apt-get install -y "php${{ matrix.php }}-dev" 2>/dev/null \
+              || sudo apt-get install -y php-dev
+            RT=$(find /usr -name 'run-tests.php' -print -quit)
+          fi
+          echo "path=${RT}" >> "$GITHUB_OUTPUT"
+
+      - name: Run PHPT tests
+        run: |
+          php "${{ steps.runtests.outputs.path }}" \
+            -p "$(which php)" \
+            -d "extension=$(pwd)/target/release/libgraphql_accelerator.so" \
+            --show-diff \
+            --offline \
+            tests/phpt/
+
+  # ── PHPUnit — no extension (baseline correctness) ─────────────────────────
+  phpunit-baseline:
+    name: "PHPUnit baseline · PHP ${{ matrix.php }} ${{ matrix.ts }}"
+    runs-on: ubuntu-latest
+    needs: build
+    continue-on-error: ${{ matrix.php == '8.5' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4', '8.5']
+        ts:  ['nts', 'ts']
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, json
+          tools: composer
+        env:
+          phpts: ${{ matrix.ts }}
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: graphql-php/vendor/
+          key: composer-${{ matrix.php }}-${{ hashFiles('graphql-php/composer.lock') }}
+          restore-keys: composer-${{ matrix.php }}-
+
+      - name: Install Composer dependencies
+        working-directory: graphql-php
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Run PHPUnit (no extension)
+        working-directory: graphql-php
+        run: php vendor/bin/phpunit -c phpunit.xml.dist
+
+  # ── PHPUnit — with extension (regression check) ───────────────────────────
+  phpunit-extension:
+    name: "PHPUnit + ext · PHP ${{ matrix.php }} ${{ matrix.ts }}"
+    runs-on: ubuntu-latest
+    needs: build
+    continue-on-error: ${{ matrix.php == '8.5' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4', '8.5']
+        ts:  ['nts', 'ts']
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, json
+          tools: composer
+        env:
+          phpts: ${{ matrix.ts }}
+
+      - name: Download extension
+        uses: actions/download-artifact@v4
+        with:
+          name: ext-php${{ matrix.php }}-${{ matrix.ts }}
+          path: target/release/
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: graphql-php/vendor/
+          key: composer-${{ matrix.php }}-${{ hashFiles('graphql-php/composer.lock') }}
+          restore-keys: composer-${{ matrix.php }}-
+
+      - name: Install Composer dependencies
+        working-directory: graphql-php
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Run PHPUnit (with extension)
+        working-directory: graphql-php
+        run: |
+          php -d "extension=${{ github.workspace }}/target/release/libgraphql_accelerator.so" \
+              vendor/bin/phpunit -c phpunit.xml.dist
+
+  # ── Performance gate ──────────────────────────────────────────────────────
+  performance-gate:
+    name: "Perf gate · PHP ${{ matrix.php }} ${{ matrix.ts }}"
+    runs-on: ubuntu-latest
+    needs: build
+    continue-on-error: ${{ matrix.php == '8.5' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4', '8.5']
+        ts:  ['nts', 'ts']
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, json
+          tools: composer
+        env:
+          phpts: ${{ matrix.ts }}
+
+      - name: Download extension
+        uses: actions/download-artifact@v4
+        with:
+          name: ext-php${{ matrix.php }}-${{ matrix.ts }}
+          path: target/release/
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: graphql-php/vendor/
+          key: composer-${{ matrix.php }}-${{ hashFiles('graphql-php/composer.lock') }}
+          restore-keys: composer-${{ matrix.php }}-
+
+      - name: Install Composer dependencies
+        working-directory: graphql-php
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Benchmark — PHP baseline (100 warmup + 1500 hot iters)
+        run: php benchmarks/detail.php --single > /tmp/bench-php.json
+
+      - name: Benchmark — with extension
+        run: |
+          php -d "extension=${{ github.workspace }}/target/release/libgraphql_accelerator.so" \
+              benchmarks/detail.php --single > /tmp/bench-ext.json
+
+      - name: Check speedup (geometric mean ≥ 10% on headline latency)
+        env:
+          SPEEDUP_THRESHOLD: '0.10'
+        run: php scripts/check-speedup.php /tmp/bench-php.json /tmp/bench-ext.json

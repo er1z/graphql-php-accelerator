@@ -32,7 +32,7 @@ use GraphQL\Language\Parser;
 
 function build_queries(): array
 {
-    $fixtureDir = __DIR__ . '/graphql-php/tests/Language';
+    $fixtureDir = __DIR__ . '/../graphql-php/tests/Language';
 
     $qs = [];
     $qs['tiny (28 B)']            = '{ hero { name } }';
