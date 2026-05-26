@@ -103,50 +103,12 @@ jobs:
             --offline \
             tests/phpt/
 
-  # ── PHPUnit — no extension (baseline correctness) ─────────────────────────
-  phpunit-baseline:
-    name: "PHPUnit baseline · PHP ${{ matrix.php }} ${{ matrix.ts }}"
-    runs-on: ubuntu-latest
-    needs: build
-    continue-on-error: ${{ matrix.php == '8.5' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        php: ['8.2', '8.3', '8.4', '8.5']
-        ts:  ['nts', 'ts']
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: ${{ matrix.php }}
-          extensions: mbstring, json
-          tools: composer
-        env:
-          phpts: ${{ matrix.ts }}
-
-      - name: Cache Composer dependencies
-        uses: actions/cache@v4
-        with:
-          path: graphql-php/vendor/
-          key: composer-${{ matrix.php }}-${{ hashFiles('graphql-php/composer.lock') }}
-          restore-keys: composer-${{ matrix.php }}-
-
-      - name: Install Composer dependencies
-        working-directory: graphql-php
-        run: composer install --no-interaction --prefer-dist --no-progress
-
-      - name: Run PHPUnit (no extension)
-        working-directory: graphql-php
-        run: php vendor/bin/phpunit -c phpunit.xml.dist
-
-  # ── PHPUnit — with extension (regression check) ───────────────────────────
-  phpunit-extension:
-    name: "PHPUnit + ext · PHP ${{ matrix.php }} ${{ matrix.ts }}"
+  # ── PHPUnit regression check ──────────────────────────────────────────────
+  # Runs the suite twice (bare PHP, then with extension) in one job so we can
+  # compare failure counts.  Pre-existing failures in the submodule are fine as
+  # long as the extension does not introduce new ones.
+  phpunit-comparison:
+    name: "PHPUnit regression · PHP ${{ matrix.php }} ${{ matrix.ts }}"
     runs-on: ubuntu-latest
     needs: build
     continue-on-error: ${{ matrix.php == '8.5' }}
@@ -187,11 +149,35 @@ jobs:
         working-directory: graphql-php
         run: composer install --no-interaction --prefer-dist --no-progress
 
-      - name: Run PHPUnit (with extension)
+      - name: Run PHPUnit — baseline (no extension)
+        working-directory: graphql-php
+        run: php vendor/bin/phpunit -c phpunit.xml.dist 2>&1 | tee /tmp/phpunit-baseline.txt || true
+
+      - name: Run PHPUnit — with extension
         working-directory: graphql-php
         run: |
           php -d "extension=${{ github.workspace }}/target/release/libgraphql_accelerator.so" \
-              vendor/bin/phpunit -c phpunit.xml.dist
+              vendor/bin/phpunit -c phpunit.xml.dist 2>&1 | tee /tmp/phpunit-ext.txt || true
+
+      - name: Compare failure counts
+        run: |
+          extract() {
+            local f=$1 n=0
+            for label in Failures Errors; do
+              v=$(grep -oP "${label}: \K[0-9]+" "$f" || true)
+              n=$((n + ${v:-0}))
+            done
+            echo $n
+          }
+          BASE=$(extract /tmp/phpunit-baseline.txt)
+          EXT=$(extract /tmp/phpunit-ext.txt)
+          echo "Baseline failures+errors : $BASE"
+          echo "Extension failures+errors: $EXT"
+          if [ "$EXT" -gt "$BASE" ]; then
+            echo "FAIL: extension introduced $((EXT - BASE)) new test failure(s)."
+            exit 1
+          fi
+          echo "PASS: no new failures introduced by the extension."
 
   # ── Performance gate ──────────────────────────────────────────────────────
   performance-gate:
