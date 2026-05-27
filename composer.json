@@ -1,7 +1,6 @@
 {
     "name": "er1z/graphql_accelerator",
     "description": "Native GraphQL parser accelerator for webonyx/graphql-php",
-    "version": "0.1.0",
     "type": "php-ext",
     "license": "MIT",
     "require": {
