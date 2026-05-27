@@ -1,52 +1,48 @@
-# ext-graphql_accelerator
+# graphql_accelerator
 
-Native GraphQL parser accelerator for `webonyx/graphql-php`, written in Rust
+PHP extension to accellerate GraphQL parser of `webonyx/graphql-php`. Written in Rust
 on top of [`apollo-parser`](https://crates.io/crates/apollo-parser) and
 [`ext-php-rs`](https://crates.io/crates/ext-php-rs).
 
-See `../PRD2.md` for the full design document.
+## Why
 
-## Status
+PHP is not the most efficient technology on parsing ASTs at a good performance. During
+the work on the application that heavily uses the GraphQL server. Unfortunately, our current
+workflow makes usage of stored queries a challenge, so came across the idea of leveraging
+query parsing to more performant technology
 
-**Phase 1–6 (parser path) — complete.** `tests/Language/` passes
-**225/225 (100%)** with the extension loaded (the 2 remaining tests are
-PHPUnit `@skipped` fixtures inherited from PRD.md — deep-recursion stress
-tests).
+## How it works
+
+As the original GraphQL PHP parser call is hardcoded, I decided not to fork the library
+and add something to the parser. Instead, this extension injects an extension-based
+parser to the PHP classes runtime to skip autoloading of the original ones. So, the only
+task to be done is to add the module to your PHP installation. All the batteries
+are already included.
+
+This approach has some limitations, but based on my benchmarks, it's the most performant.
+Initially, I started with a fork of PHP libgraphqlparser wrapper, but the original C library
+is unmaintained, so not all features were available.
+
+Using apollo-parser provides predictive stability, and – what surprised me – offered way better
+performance.
+
+## Disclaimer
+
+This extension is not production-ready, and you are responsible for any damage
+caused by using it. It was built as a challenge, yet I will try to use it by myself
+where applicable. Also, the codebase was built by AI-vibing but with making sure
+all the good software craftsmanship principles are still followed, so:
+
+- all known memory leaks are covered
+- development was focused on verifying if new logic keeps original unit tests still to be successful
+- this project was published once it started to bring at least noticeable benefits
+
+## Outcomes
 
 `benchmark-native.php` reports a **geomean 11–16× speedup** across 8 query
-sizes (range 7.4×–20.9×). Zero `n/a` queries — every GraphQL document the
-benchmark exercises is supported natively (the previous libgraphqlparser-era
-extension had several `n/a` rows for SDL constructs).
-
-Full per-section results — latency, location cost, memory, throughput,
+sizes (range 7.4×–20.9×). Full per-section results — latency, location cost, memory, throughput,
 synthetic stress, partial parsers — are in
-[`../benchmarks/RESULTS.md`](../benchmarks/RESULTS.md).
-
-## What's done
-
-- 53 native PHP class entries: `Source`, `SourceLocation`, `Location`,
-  `DirectiveLocation`, `Node`, 43 concrete AST nodes, 10 marker interfaces,
-  and `Parser`. (`Token`, `Lexer`, `NodeKind`, and `NodeList` autoload from
-  the on-disk PHP files — they hit non-hot code paths.)
-- `<SOF>` → … → `<EOF>` `Token` chain materialised on the document's
-  `Location` (comments included, whitespace and commas skipped), built
-  from a single re-lex pass over the source via apollo's `Lexer`.
-- `Parser::parse`, `Parser::parseValue`, `Parser::parseType`, and 17
-  `__callStatic` partial parsers (`name`, `argumentsDefinition`,
-  `directiveLocations`, `implementsInterfaces`, `unionMemberTypes`, …).
-- Native handling for `noLocation`, `allowLegacySDLEmptyFields`,
-  `allowLegacySDLImplementsInterfaces`, `experimentalFragmentVariables`,
-  and `recursionLimit` options.
-- Block-string parsing with the `\"""` → `"""` spec escape.
-- `Node::__construct`/`__toString`/`toArray`/`jsonSerialize`/`cloneDeep`/
-  `getName`, `Location::create`/`toArray`, `Source::getLocation`,
-  `SourceLocation::jsonSerialize` all implemented in Rust.
-- `SyntaxError` thrown via `PhpException::new` + scoped
-  `zend_update_property` for the inherited `Error` typed properties.
-- 7 phpt smoke tests in `tests/phpt/` (extension loads, all expected
-  classes/interfaces registered, constants correct, property order
-  matches the PHP source, `Parser::parse` parses end-to-end, instanceof
-  graph parity, no AST autoload triggered).
+[`benchmarks/RESULTS.md`](../benchmarks/RESULTS.md).
 
 ## Build
 
@@ -62,7 +58,9 @@ Requires:
 - Rust 1.95+
 - `libclang-dev` (pulled in by `ext-php-rs-bindgen`)
 
-## Smoke-load
+## Testing
+
+### Smoke-load
 
 ```bash
 php -d extension=$(pwd)/target/release/libgraphql_accelerator.so \
@@ -70,7 +68,7 @@ php -d extension=$(pwd)/target/release/libgraphql_accelerator.so \
 # bool(true)
 ```
 
-## Run the extension-local phpt suite
+### Run the extension-local phpt suite
 
 ```bash
 TEST_PHP_EXECUTABLE=$(which php) \
@@ -80,16 +78,16 @@ TEST_PHP_EXECUTABLE=$(which php) \
 # Tests passed : 7 (100.0%)
 ```
 
-## Run the project's PHPUnit Language suite
+### Run the project's PHPUnit Language suite
 
 ```bash
-cd ..
-php -d extension=$(pwd)/ext/target/release/libgraphql_accelerator.so \
+cd graphql-php
+php -d extension=$(pwd)/../ext/target/release/libgraphql_accelerator.so \
     vendor/bin/phpunit tests/Language/ --no-progress
 # Tests: 227, Assertions: 14299, Skipped: 2 (100% effective pass)
 ```
 
-## Benchmark
+### Benchmark
 
 ```bash
 cd ..
