@@ -44,6 +44,74 @@ sizes (range 7.4×–20.9×). Full per-section results — latency, location cos
 synthetic stress, partial parsers — are in
 [`benchmarks/RESULTS.md`](../benchmarks/RESULTS.md).
 
+## Requirements
+
+- Linux/MacOS (Windows is **not** supported, if you're eager to prepare the pipeline, feel free to make a PR)
+- PHP 8.1+
+- libc runtime (didn't test with others like musl)
+- Rust 1.88+ for building (not needed for a runtime)
+
+## Installation
+
+### Prerequisites
+
+Make sure you have configured PHP with sources and available `cargo` + `rustc`.
+Minimum version is `1.88` so if you are under Debian Trixie, use backports repository
+to get an actual cargo version:
+
+```shell
+# edit /etc/apt/sources.list.d to add backports: https://backports.debian.org/Instructions/
+apt-get update
+apt-get install -t backports cargo
+```
+
+### Recommended: PIE installation
+
+If you have [PIE](https://github.com/php/pie), then the installation is pretty straightforward:
+```shell
+pie install er1z/graphql_accelerator
+```
+
+### Manual installation from sources
+
+Clone the repository and then use a standard PHP extensions installation:
+```shell
+phpize
+./configure
+make
+make install
+```
+
+### Manual installation from binaries
+
+There are Linux amd64 binaries available on Releases page.
+
+## What's done
+
+- 53 native PHP class entries: `Source`, `SourceLocation`, `Location`,
+  `DirectiveLocation`, `Node`, 43 concrete AST nodes, 10 marker interfaces,
+  and `Parser`. (`Token`, `Lexer`, `NodeKind`, and `NodeList` autoload from
+  the on-disk PHP files — they hit non-hot code paths.)
+- `<SOF>` → … → `<EOF>` `Token` chain materialised on the document's
+  `Location` (comments included, whitespace and commas skipped), built
+  from a single re-lex pass over the source via apollo's `Lexer`.
+- `Parser::parse`, `Parser::parseValue`, `Parser::parseType`, and 17
+  `__callStatic` partial parsers (`name`, `argumentsDefinition`,
+  `directiveLocations`, `implementsInterfaces`, `unionMemberTypes`, …).
+- Native handling for `noLocation`, `allowLegacySDLEmptyFields`,
+  `allowLegacySDLImplementsInterfaces`, `experimentalFragmentVariables`,
+  and `recursionLimit` options.
+- Block-string parsing with the `\"""` → `"""` spec escape.
+- `Node::__construct`/`__toString`/`toArray`/`jsonSerialize`/`cloneDeep`/
+  `getName`, `Location::create`/`toArray`, `Source::getLocation`,
+  `SourceLocation::jsonSerialize` all implemented in Rust.
+- `SyntaxError` thrown via `PhpException::new` + scoped
+  `zend_update_property` for the inherited `Error` typed properties.
+- 7 phpt smoke tests in `tests/phpt/` (extension loads, all expected
+  classes/interfaces registered, constants correct, property order
+  matches the PHP source, `Parser::parse` parses end-to-end, instanceof
+  graph parity, no AST autoload triggered).
+
 ## Build
 
 ```bash
