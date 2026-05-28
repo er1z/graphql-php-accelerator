@@ -9,6 +9,7 @@ cargo-override.stamp: graphql_accelerator.la
 		cp target/release/libgraphql_accelerator.dylib target/release/libgraphql_accelerator.so; \
 	fi
 	$(INSTALL) -m 0755 target/release/libgraphql_accelerator.so .libs/graphql_accelerator.so
+	$(INSTALL) -m 0755 target/release/libgraphql_accelerator.so modules/graphql_accelerator.so
 	@touch cargo-override.stamp
 
 install: cargo-override.stamp
