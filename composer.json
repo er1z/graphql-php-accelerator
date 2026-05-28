@@ -6,14 +6,18 @@
     "require": {
         "php": ">=8.1"
     },
-    "extra": {
-        "php-ext": {
-            "extension-name": "graphql_accelerator",
-            "support-zts": true,
-            "support-nts": true,
-            "build-type": "cargo",
-            "os-families": ["linux", "darwin"],
-            "download-url-method": ["pre-packaged-binary", "composer-default"]
-        }
+    "php-ext": {
+        "extension-name": "graphql_accelerator",
+        "support-zts": true,
+        "support-nts": true,
+        "build-type": "cargo",
+        "os-families": [
+            "linux",
+            "darwin"
+        ],
+        "download-url-method": [
+            "pre-packaged-binary",
+            "composer-default"
+        ]
     }
 }
