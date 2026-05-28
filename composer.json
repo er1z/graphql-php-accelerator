@@ -11,7 +11,8 @@
             "extension-name": "graphql_accelerator",
             "support-zts": true,
             "support-nts": true,
-            "build-type": "cargo"
+            "build-type": "cargo",
+            "os-families": ["linux", "darwin"]
         }
     }
 }
